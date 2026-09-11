@@ -11,8 +11,14 @@
 
   let joinInfo = null;   // { worldSize, zones, weapons, abilities, evolutions, playerId }
   let prevSnap = null, curSnap = null, prevRecvAt = 0, curRecvAt = 0;
+  // `predicted` is pure local-input physics (never touched by server
+  // corrections, so it never fights fresh input); `visualOffset` is the
+  // measured server error, purely additive and decaying, used only for
+  // rendering/camera/effects. This is what stops corrections from feeling
+  // like resistance when you change direction under real network latency.
   let predicted = { x: 0, y: 0, inited: false };
-  let serverSelfTarget = null;
+  let visualOffset = { x: 0, y: 0 };
+  let visual = { x: 0, y: 0 };
   let bgGrad = null;
   let dying = false, dyingUntil = 0, pendingDeath = null;
   let spawnAnimStart = 0;
@@ -154,25 +160,22 @@
       predicted.x = Math.max(r, Math.min(ws - r, predicted.x));
       predicted.y = Math.max(r, Math.min(ws - r, predicted.y));
 
-      // continuously (every rendered frame, not once per ~66ms network packet)
-      // nudge the prediction toward the last known authoritative position.
-      // Spreading the correction over many small frame-rate-independent steps
-      // instead of one lump pull per snapshot is what removes the rubberbanding.
-      if (serverSelfTarget) {
-        const pull = 1 - Math.pow(0.0006, dt);
-        predicted.x += (serverSelfTarget.x - predicted.x) * pull;
-        predicted.y += (serverSelfTarget.y - predicted.y) * pull;
-      }
+      // decay any measured server-vs-prediction error toward zero every frame.
+      // predicted itself is never touched here, so a correction never fights
+      // fresh input the way a direct pull-toward-server did.
+      const decay = Math.pow(0.0001, dt);
+      visualOffset.x *= decay; visualOffset.y *= decay;
+      visual.x = predicted.x + visualOffset.x;
+      visual.y = predicted.y + visualOffset.y;
 
       // faint motion trail while moving - purely cosmetic
       if (moving) {
         trailTimer -= dt;
         if (trailTimer <= 0) {
           trailTimer = 0.05;
-          const r = self ? self.radius : 18;
           worldParticles.emit({
-            x: predicted.x - dx * r * 0.6 + (Math.random() - 0.5) * 6,
-            y: predicted.y - dy * r * 0.6 + (Math.random() - 0.5) * 6,
+            x: visual.x - dx * r * 0.6 + (Math.random() - 0.5) * 6,
+            y: visual.y - dy * r * 0.6 + (Math.random() - 0.5) * 6,
             vx: (Math.random() - 0.5) * 14, vy: (Math.random() - 0.5) * 14,
             life: 0.3, size: r * 0.32, endSize: 0, color: '#ffffffa0', drag: 0.88,
           });
@@ -187,7 +190,7 @@
       if (w && now >= localFireNextAt) {
         localFireNextAt = now + 1000 / w.fireRate;
         SFX.shoot(curSnap.self.weapon);
-        muzzleFlash(predicted.x, predicted.y, input.aimAngle, w.color);
+        muzzleFlash(visual.x, visual.y, input.aimAngle, w.color);
       }
     }
   }
@@ -206,7 +209,7 @@
   Net.on('joined', (data) => {
     joinInfo = data;
     predicted.inited = false;
-    serverSelfTarget = null;
+    visualOffset.x = 0; visualOffset.y = 0;
     dying = false; pendingDeath = null;
     spawnAnimStart = performance.now();
     SFX.spawn();
@@ -222,15 +225,18 @@
     const self = data.self;
     if (!predicted.inited) {
       predicted.x = self.x; predicted.y = self.y; predicted.inited = true;
-      serverSelfTarget = { x: self.x, y: self.y };
+      visualOffset.x = 0; visualOffset.y = 0;
+      visual.x = self.x; visual.y = self.y;
     } else {
-      const diff = Math.hypot(self.x - predicted.x, self.y - predicted.y);
-      // only a genuine desync (respawn, big knockback) snaps instantly; everyday
-      // drift (e.g. server-side collision separation the client doesn't simulate)
-      // is bled off gradually every frame instead, which is what actually kills
-      // the rubberbanding rather than one lump correction per network packet.
-      if (diff > 320) { predicted.x = self.x; predicted.y = self.y; }
-      serverSelfTarget = { x: self.x, y: self.y };
+      const errX = self.x - predicted.x, errY = self.y - predicted.y;
+      const diff = Math.hypot(errX, errY);
+      // predicted is pure local physics and is never nudged here - that's what
+      // keeps input feeling instant under real network latency instead of being
+      // fought by a correction dragging toward an already-stale server position.
+      // A moderate error just becomes the new decaying visual offset (see
+      // computeInput); only a genuine desync (respawn, knockback) hard-snaps.
+      if (diff > 400) { predicted.x = self.x; predicted.y = self.y; visualOffset.x = 0; visualOffset.y = 0; }
+      else { visualOffset.x = errX; visualOffset.y = errY; }
     }
 
     if (lastHealth !== null && self.health < lastHealth - 0.5) {
@@ -241,11 +247,11 @@
     if (self.resourcesCollected > lastResourceCount) {
       SFX.collect();
       const gained = Math.max(1, Math.round(self.score - lastScoreForPickup));
-      worldParticles.burst(predicted.x, predicted.y, 10, {
+      worldParticles.burst(visual.x, visual.y, 10, {
         color: ['#ffd75a', '#fff2b0', '#ffffff'], minSpeed: 60, maxSpeed: 160,
         minLife: 0.25, maxLife: 0.45, minSize: 1.5, maxSize: 3.5, glow: true, drag: 0.9,
       });
-      spawnPickupNumber(predicted.x, predicted.y - 14, gained);
+      spawnPickupNumber(visual.x, visual.y - 14, gained);
     }
     lastResourceCount = self.resourcesCollected;
     lastScoreForPickup = self.score;
@@ -279,7 +285,7 @@
     SFX.death();
     triggerShake(22, 0.55);
     const selfColor = (curSnap && findById(curSnap.players, curSnap.self.id) || {}).c || '#5ad1ff';
-    worldParticles.burst(predicted.x, predicted.y, 50, {
+    worldParticles.burst(visual.x, visual.y, 50, {
       color: [selfColor, '#ffffff', '#ffd75a'], minSpeed: 70, maxSpeed: 340,
       minLife: 0.35, maxLife: 0.85, minSize: 3, maxSize: 7, glow: true, drag: 0.94,
     });
@@ -291,7 +297,7 @@
 
   Net.on('levelup', (data) => {
     SFX.levelup();
-    worldParticles.burst(predicted.x, predicted.y, 40, { color: ['#5ad1ff', '#ffd75a', '#ffffff'], minSpeed: 80, maxSpeed: 320, minLife: 0.4, maxLife: 0.9, glow: true, maxSize: 6 });
+    worldParticles.burst(visual.x, visual.y, 40, { color: ['#5ad1ff', '#ffd75a', '#ffffff'], minSpeed: 80, maxSpeed: 320, minLife: 0.4, maxLife: 0.9, glow: true, maxSize: 6 });
     if (window.UI) window.UI.onLevelUp(data);
   });
 
@@ -553,8 +559,8 @@
       const self = curSnap.self;
       const targetZoom = Math.max(0.38, Math.min(1.15, 1.15 * Math.sqrt(18 / Math.max(18, self.radius))));
       camera.zoom += (targetZoom - camera.zoom) * 0.08;
-      camera.x += (predicted.x - camera.x) * 0.25;
-      camera.y += (predicted.y - camera.y) * 0.25;
+      camera.x += (visual.x - camera.x) * 0.25;
+      camera.y += (visual.y - camera.y) * 0.25;
     }
 
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -604,7 +610,7 @@
         if (selfVisual) {
           const spawnT = spawnAnimStart ? Math.min(1, (performance.now() - spawnAnimStart) / 380) : 1;
           const scale = spawnT < 1 ? easeOutBack(spawnT) : 1;
-          drawPlayer({ ...selfVisual, x: predicted.x, y: predicted.y, a: input.aimAngle, _score: curSnap.self.score, _scale: scale }, true);
+          drawPlayer({ ...selfVisual, x: visual.x, y: visual.y, a: input.aimAngle, _score: curSnap.self.score, _scale: scale }, true);
         }
       }
 
@@ -631,7 +637,7 @@
     start() {
       running = true; lastFrameT = 0;
       predicted.inited = false;
-      serverSelfTarget = null;
+      visualOffset.x = 0; visualOffset.y = 0;
       dmgNumbers = [];
       lastHealth = null; lastKillCount = 0; lastResourceCount = 0; lastScoreForPickup = 0;
       detectMobile();
