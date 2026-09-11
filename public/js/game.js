@@ -14,6 +14,10 @@
   let predicted = { x: 0, y: 0, inited: false };
   let serverSelfTarget = null;
   let bgGrad = null;
+  let dying = false, dyingUntil = 0, pendingDeath = null;
+  let spawnAnimStart = 0;
+  let trailTimer = 0;
+  const DEATH_ANIM_MS = 650;
   let camera = { x: 0, y: 0, zoom: 1 };
   let shake = { t: 0, mag: 0 };
   let running = false;
@@ -25,7 +29,7 @@
   let mouse = { x: 0, y: 0 };
   let mouseDown = false;
   let localFireNextAt = 0;
-  let lastKillCount = 0, lastResourceCount = 0, lastHealth = null;
+  let lastKillCount = 0, lastResourceCount = 0, lastHealth = null, lastScoreForPickup = 0;
 
   function resize() {
     W = window.innerWidth; H = window.innerHeight;
@@ -114,6 +118,7 @@
   }
 
   function computeInput(dt) {
+    if (dying) return;
     // WASD/arrows drive movement; mouse only sets aim/fire direction (diep.io-style split controls)
     let dx = 0, dy = 0, moving = false;
     const kx = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
@@ -158,6 +163,21 @@
         predicted.x += (serverSelfTarget.x - predicted.x) * pull;
         predicted.y += (serverSelfTarget.y - predicted.y) * pull;
       }
+
+      // faint motion trail while moving - purely cosmetic
+      if (moving) {
+        trailTimer -= dt;
+        if (trailTimer <= 0) {
+          trailTimer = 0.05;
+          const r = self ? self.radius : 18;
+          worldParticles.emit({
+            x: predicted.x - dx * r * 0.6 + (Math.random() - 0.5) * 6,
+            y: predicted.y - dy * r * 0.6 + (Math.random() - 0.5) * 6,
+            vx: (Math.random() - 0.5) * 14, vy: (Math.random() - 0.5) * 14,
+            life: 0.3, size: r * 0.32, endSize: 0, color: '#ffffffa0', drag: 0.88,
+          });
+        }
+      }
     }
 
     // local optimistic fire sfx/vfx (server is still authoritative for damage)
@@ -187,6 +207,9 @@
     joinInfo = data;
     predicted.inited = false;
     serverSelfTarget = null;
+    dying = false; pendingDeath = null;
+    spawnAnimStart = performance.now();
+    SFX.spawn();
     detectMobile();
     document.getElementById('ability-label').textContent = 'DASH';
   });
@@ -215,8 +238,17 @@
       triggerShake(Math.min(14, (lastHealth - self.health) * 0.6), 0.18);
     }
     lastHealth = self.health;
-    if (self.resourcesCollected > lastResourceCount) { SFX.collect(); }
+    if (self.resourcesCollected > lastResourceCount) {
+      SFX.collect();
+      const gained = Math.max(1, Math.round(self.score - lastScoreForPickup));
+      worldParticles.burst(predicted.x, predicted.y, 10, {
+        color: ['#ffd75a', '#fff2b0', '#ffffff'], minSpeed: 60, maxSpeed: 160,
+        minLife: 0.25, maxLife: 0.45, minSize: 1.5, maxSize: 3.5, glow: true, drag: 0.9,
+      });
+      spawnPickupNumber(predicted.x, predicted.y - 14, gained);
+    }
     lastResourceCount = self.resourcesCollected;
+    lastScoreForPickup = self.score;
     if (self.kills > lastKillCount) { SFX.destroy(); }
     lastKillCount = self.kills;
 
@@ -244,12 +276,17 @@
   });
 
   Net.on('death', (stats) => {
-    running = false;
-    if (rafId) cancelAnimationFrame(rafId);
     SFX.death();
-    triggerShake(20, 0.5);
+    triggerShake(22, 0.55);
+    const selfColor = (curSnap && findById(curSnap.players, curSnap.self.id) || {}).c || '#5ad1ff';
+    worldParticles.burst(predicted.x, predicted.y, 50, {
+      color: [selfColor, '#ffffff', '#ffd75a'], minSpeed: 70, maxSpeed: 340,
+      minLife: 0.35, maxLife: 0.85, minSize: 3, maxSize: 7, glow: true, drag: 0.94,
+    });
+    dying = true;
+    dyingUntil = performance.now() + DEATH_ANIM_MS;
     const earned = window.Meta ? Meta.recordMatchResult(stats) : 0;
-    if (window.UI) window.UI.showDeathScreen(stats, earned);
+    pendingDeath = { stats, earned };
   });
 
   Net.on('levelup', (data) => {
@@ -276,10 +313,13 @@
 
   Net.on('chat', (msg) => { if (window.UI) window.UI.addChatMessage(msg); });
 
-  // ---------------- floating damage numbers (screen-space, world-tracked) ----------------
+  // ---------------- floating damage/pickup numbers (screen-space, world-tracked) ----------------
   let dmgNumbers = [];
   function spawnDamageNumber(x, y, amount, crit) {
     dmgNumbers.push({ x, y, amount, crit, t: 0 });
+  }
+  function spawnPickupNumber(x, y, amount) {
+    dmgNumbers.push({ x, y, amount, pickup: true, t: 0 });
   }
 
   // ---------------- rendering ----------------
@@ -381,9 +421,16 @@
     ctx.fill(); ctx.stroke();
   }
 
+  function easeOutBack(t) {
+    const c1 = 1.7, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
   function drawPlayer(p, isSelf) {
+    const scale = p._scale !== undefined ? Math.max(0, p._scale) : 1;
     ctx.save();
     ctx.translate(p.x, p.y);
+    if (scale !== 1) ctx.scale(scale, scale);
     if (p.sh) {
       ctx.save();
       ctx.strokeStyle = '#4db8f0cc'; ctx.lineWidth = 4;
@@ -448,9 +495,15 @@
       const alpha = 1 - d.t / 0.9;
       ctx.save();
       ctx.globalAlpha = Math.max(0, alpha);
-      ctx.font = d.crit ? 'bold 20px Orbitron, sans-serif' : 'bold 14px Rajdhani, sans-serif';
-      ctx.fillStyle = d.crit ? '#ffd75a' : '#ff8f5a';
-      ctx.fillText(Math.round(d.amount), d.x, d.y - d.t * 40 - 10);
+      if (d.pickup) {
+        ctx.font = "700 13px 'Baloo 2', sans-serif";
+        ctx.fillStyle = '#2f8f2f';
+        ctx.fillText(`+${Math.round(d.amount)}`, d.x, d.y - d.t * 30 - 6);
+      } else {
+        ctx.font = d.crit ? 'bold 20px Orbitron, sans-serif' : 'bold 14px Rajdhani, sans-serif';
+        ctx.fillStyle = d.crit ? '#ffd75a' : '#ff8f5a';
+        ctx.fillText(Math.round(d.amount), d.x, d.y - d.t * 40 - 10);
+      }
       ctx.restore();
     }
   }
@@ -481,6 +534,13 @@
   let lastFrameT = 0;
   function frame(ts) {
     if (!running) return;
+    if (dying && performance.now() >= dyingUntil) {
+      running = false;
+      dying = false;
+      const d = pendingDeath; pendingDeath = null;
+      if (window.UI && d) window.UI.showDeathScreen(d.stats, d.earned);
+      return;
+    }
     if (!lastFrameT) lastFrameT = ts;
     const dt = Math.min(0.05, (ts - lastFrameT) / 1000);
     lastFrameT = ts;
@@ -539,8 +599,14 @@
         drawPlayer(p, false);
       }
       // draw local player at predicted position, using server-driven cosmetic/status flags
-      const selfVisual = findById(curSnap.players, curSnap.self.id);
-      if (selfVisual) drawPlayer({ ...selfVisual, x: predicted.x, y: predicted.y, a: input.aimAngle, _score: curSnap.self.score }, true);
+      if (!dying) {
+        const selfVisual = findById(curSnap.players, curSnap.self.id);
+        if (selfVisual) {
+          const spawnT = spawnAnimStart ? Math.min(1, (performance.now() - spawnAnimStart) / 380) : 1;
+          const scale = spawnT < 1 ? easeOutBack(spawnT) : 1;
+          drawPlayer({ ...selfVisual, x: predicted.x, y: predicted.y, a: input.aimAngle, _score: curSnap.self.score, _scale: scale }, true);
+        }
+      }
 
       if (curSnap.boss) {
         const bossInterp = prevSnap.boss ? { ...curSnap.boss, x: prevSnap.boss.x + (curSnap.boss.x - prevSnap.boss.x) * alpha, y: prevSnap.boss.y + (curSnap.boss.y - prevSnap.boss.y) * alpha } : curSnap.boss;
@@ -567,7 +633,7 @@
       predicted.inited = false;
       serverSelfTarget = null;
       dmgNumbers = [];
-      lastHealth = null; lastKillCount = 0; lastResourceCount = 0;
+      lastHealth = null; lastKillCount = 0; lastResourceCount = 0; lastScoreForPickup = 0;
       detectMobile();
       canvas.classList.remove('hidden');
       rafId = requestAnimationFrame(frame);
