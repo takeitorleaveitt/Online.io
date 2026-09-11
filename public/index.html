@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Online.io</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2240%22 fill=%22%235ad1ff%22/></svg>" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<canvas id="game-canvas" class="hidden"></canvas>
+
+<!-- ============ MAIN MENU ============ -->
+<div id="screen-menu" class="screen">
+  <div class="brand">
+    <div class="brand-logo">ONLINE<span>.io</span></div>
+    <div class="brand-tag">grow. fight. dominate.</div>
+  </div>
+
+  <div class="server-pill" id="server-pill">
+    <span class="dot"></span> <span id="server-pill-text">connecting…</span>
+  </div>
+
+  <div class="menu-main">
+    <div class="name-row">
+      <input id="name-input" maxlength="16" placeholder="Enter name" autocomplete="off" />
+    </div>
+    <button id="btn-play" class="btn-play">PLAY</button>
+    <div class="menu-grid">
+      <button class="menu-btn" data-panel="customize">CUSTOMIZE</button>
+      <button class="menu-btn" data-panel="upgrades">UPGRADES</button>
+      <button class="menu-btn" data-panel="missions">MISSIONS</button>
+      <button class="menu-btn" data-panel="leaderboards">LEADERBOARDS</button>
+      <button class="menu-btn" data-panel="shop">SHOP</button>
+      <button class="menu-btn" data-panel="settings">SETTINGS</button>
+    </div>
+  </div>
+
+  <div class="menu-footer">
+    <div class="currency-pill">⬡ <span id="currency-amount">0</span></div>
+    <div class="daily-pill" id="daily-pill">🎁 Daily Reward</div>
+  </div>
+</div>
+
+<!-- ============ PANEL OVERLAY (customize/upgrades/missions/leaderboards/shop/settings) ============ -->
+<div id="panel-overlay" class="panel-overlay hidden">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title" id="panel-title">PANEL</div>
+      <button class="panel-close" id="panel-close">✕</button>
+    </div>
+    <div class="panel-body" id="panel-body"></div>
+  </div>
+</div>
+
+<!-- ============ HUD (in game) ============ -->
+<div id="hud" class="hud hidden">
+  <div class="hud-top-left">
+    <div class="level-badge">LV <span id="hud-level">1</span></div>
+    <div class="xp-bar-wrap"><div class="xp-bar" id="hud-xp-bar"></div></div>
+    <div class="score-line">SCORE <span id="hud-score">0</span></div>
+  </div>
+
+  <div class="hud-top-right" id="hud-leaderboard">
+    <div class="lb-title">LEADERBOARD</div>
+    <ol id="lb-list"></ol>
+    <div class="lb-self" id="lb-self">#? — YOU</div>
+  </div>
+
+  <div id="event-banner" class="event-banner hidden"></div>
+  <div id="boss-bar" class="boss-bar hidden">
+    <div class="boss-name" id="boss-name">WORLD BOSS</div>
+    <div class="boss-hp-wrap"><div class="boss-hp" id="boss-hp"></div></div>
+  </div>
+
+  <div class="hud-bottom-left">
+    <div class="stat-bar hp-bar"><div class="stat-fill" id="hud-hp-fill"></div><span class="stat-label" id="hud-hp-label">100/100</span></div>
+    <div class="stat-bar en-bar"><div class="stat-fill" id="hud-en-fill"></div><span class="stat-label" id="hud-en-label">100/100</span></div>
+    <div class="weapon-row" id="weapon-row"></div>
+  </div>
+
+  <div class="hud-bottom-center">
+    <button id="ability-btn" class="ability-btn">
+      <div class="ability-cd" id="ability-cd"></div>
+      <span id="ability-label">DASH</span>
+    </button>
+  </div>
+
+  <div class="hud-bottom-right">
+    <canvas id="minimap" width="150" height="150"></canvas>
+    <div class="pop-line"><span id="pop-real">0</span> real · <span id="pop-bots">0</span> bots</div>
+  </div>
+
+  <div id="chat-box" class="chat-box">
+    <div id="chat-log" class="chat-log"></div>
+    <input id="chat-input" maxlength="140" placeholder="Press Enter to chat" />
+  </div>
+
+  <div id="mobile-controls" class="mobile-controls hidden">
+    <div id="joystick-zone" class="joystick-zone">
+      <div id="joystick-stick" class="joystick-stick"></div>
+    </div>
+    <button id="fire-btn" class="fire-btn">FIRE</button>
+  </div>
+</div>
+
+<!-- ============ LEVEL UP / EVOLUTION picker ============ -->
+<div id="levelup-overlay" class="levelup-overlay hidden">
+  <div class="levelup-title">LEVEL <span id="levelup-num">2</span> — CHOOSE AN UPGRADE</div>
+  <div class="upgrade-grid" id="upgrade-grid"></div>
+  <button class="skip-btn" id="upgrade-skip">skip</button>
+</div>
+
+<div id="evolution-overlay" class="levelup-overlay hidden">
+  <div class="levelup-title">LEVEL <span id="evo-num">10</span> — CHOOSE AN EVOLUTION</div>
+  <div class="evolution-grid" id="evolution-grid"></div>
+</div>
+
+<!-- ============ WORLD BOSS ANNOUNCEMENT ============ -->
+<div id="boss-announce" class="boss-announce hidden">⚠ WORLD BOSS SPAWNED ⚠</div>
+
+<!-- ============ ACHIEVEMENT TOAST ============ -->
+<div id="toast-stack" class="toast-stack"></div>
+
+<!-- ============ DEATH SCREEN ============ -->
+<div id="screen-death" class="screen death-screen hidden">
+  <div class="death-title">YOU WERE DESTROYED</div>
+  <div class="death-killer" id="death-killer"></div>
+  <div class="death-stats">
+    <div>SCORE: <span id="death-score">0</span></div>
+    <div>LEVEL: <span id="death-level">1</span></div>
+    <div>KILLS: <span id="death-kills">0</span></div>
+    <div>SURVIVAL TIME: <span id="death-time">0:00</span></div>
+    <div>BEST SCORE: <span id="death-best">0</span></div>
+  </div>
+  <div class="death-buttons">
+    <button id="death-play-again" class="btn-play small">PLAY AGAIN</button>
+    <button id="death-customize" class="menu-btn">CUSTOMIZE</button>
+    <button id="death-menu" class="menu-btn">MAIN MENU</button>
+  </div>
+</div>
+
+<!-- ============ CONNECTING OVERLAY ============ -->
+<div id="screen-connecting" class="screen connecting-screen hidden">
+  <div class="connecting-title" id="connecting-title">CONNECTING…</div>
+  <div class="connecting-sub" id="connecting-sub"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/particles.js"></script>
+<script src="js/menuBackground.js"></script>
+<script src="js/meta.js"></script>
+<script src="js/net.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
