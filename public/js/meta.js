@@ -43,7 +43,7 @@
       achievements: {},
       daily: { streak: 0, lastClaim: null },
       recentPlayers: [],
-      settings: { musicVolume: 0.5, sfxVolume: 0.8, soundOn: true, mobileControlsForce: 'auto' },
+      settings: { sfxVolume: 0.8, soundOn: true, mobileControlsForce: 'auto' },
     };
   }
 

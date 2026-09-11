@@ -87,6 +87,7 @@
   document.querySelectorAll('[data-panel]').forEach((btn) => {
     btn.addEventListener('click', () => { SFX.click(); UI.openPanel(btn.dataset.panel); });
   });
+  $('ingame-shop-btn').addEventListener('click', () => { SFX.click(); UI.openPanel('shop'); });
 
   $('daily-pill').addEventListener('click', () => {
     if (!Meta.dailyClaimable()) { UI.toast('ALREADY CLAIMED', `Streak ${Meta.state.daily.streak} 🔥 — come back tomorrow`); return; }
@@ -125,11 +126,10 @@
     } else if (e.key === 'Escape') { chatInput.value = ''; chatInput.blur(); }
   });
 
-  // upgrade-spend hotkey reminder
+  // U toggles the in-game upgrade panel collapsed/expanded
   window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyU' && document.activeElement.tagName !== 'INPUT') {
-      const self = window.Game.self;
-      if (self && self.upgradePoints > 0) UI.showLevelUp({ level: self.level, upgradePoints: self.upgradePoints });
+      $('ingame-upgrade-panel').classList.toggle('collapsed');
     }
   });
 })();

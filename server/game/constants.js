@@ -4,7 +4,7 @@
 
 module.exports = {
   TICK_RATE: 30,                // server simulation ticks per second
-  BROADCAST_RATE: 20,           // snapshots sent to clients per second
+  BROADCAST_RATE: 24,           // snapshots sent to clients per second
   WORLD_SIZE: 6000,             // world is WORLD_SIZE x WORLD_SIZE units
 
   MAX_PLAYERS_PER_ROOM: 60,
@@ -26,7 +26,7 @@ module.exports = {
   PLAYER_BASE_RADIUS: 18,
   PLAYER_MAX_RADIUS: 120,
   PLAYER_BASE_SPEED: 220,       // units / second
-  PLAYER_BASE_HEALTH: 100,
+  PLAYER_BASE_HEALTH: 60,       // lower = faster, more arcade-like early kills
   PLAYER_BASE_ENERGY: 100,
   PLAYER_BASE_DAMAGE: 10,
 

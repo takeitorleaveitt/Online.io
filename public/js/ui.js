@@ -65,10 +65,12 @@
 
     const lbList = $('lb-list');
     lbList.innerHTML = '';
+    const topScore = Math.max(1, ...data.leaderboard.map((r) => r.score));
     data.leaderboard.forEach((row) => {
       const li = document.createElement('li');
       if (row.rank === data.myRank) li.classList.add('me');
-      li.innerHTML = `<span>${row.rank}.</span><span class="lbn">${escapeHtml(row.name)}</span><span>${fmt(row.score)}</span>`;
+      const pct = Math.max(6, Math.round((row.score / topScore) * 100));
+      li.innerHTML = `<div class="lb-bar" style="width:${pct}%"></div><span class="lbn">${row.rank}. ${escapeHtml(row.name)}</span><span class="lbs">${fmt(row.score)}</span>`;
       lbList.appendChild(li);
     });
     const inTop = data.myRank && data.myRank <= 10;
@@ -91,19 +93,46 @@
       tokenEl.textContent = self.upgradePoints;
       $('token-badge').classList.toggle('has-tokens', self.upgradePoints > 0);
     }
-    refreshSkillTreeIfOpen(self);
+    renderUpgradePanel(self);
   }
 
-  function refreshSkillTreeIfOpen(self) {
-    const overlay = $('levelup-overlay');
-    if (!overlay || overlay.classList.contains('hidden')) return;
-    $('levelup-num').textContent = self.upgradePoints;
-    overlay.querySelectorAll('.skill-node').forEach((node) => {
-      const key = node.dataset.key;
+  // ---------------- persistent in-game upgrade panel (diep.io style) ----------------
+  const UPGRADE_ROW_COLORS = {
+    maxHealth: 'orange', energyRegen: 'orange', armor: 'orange', energy: 'orange',
+    damage: 'red', critChance: 'red', attackSpeed: 'red', lifeSteal: 'red',
+    speed: 'purple', projectileSpeed: 'purple',
+  };
+  let upgradePanelBuilt = false;
+  function buildUpgradePanel() {
+    const panel = $('ingame-upgrade-panel');
+    panel.innerHTML = '';
+    Object.entries(UPGRADE_DEFS).forEach(([key, def]) => {
+      const row = document.createElement('div');
+      row.className = 'upgrade-row';
+      row.dataset.key = key;
+      row.innerHTML = `
+        <span class="upgrade-row-name">${def.icon} ${def.name} <span class="upgrade-row-rank">[<span class="rank-num">0</span>]</span></span>
+        <button class="gbtn gbtn-${UPGRADE_ROW_COLORS[key] || 'blue'} gbtn-sm upgrade-plus">+</button>`;
+      row.querySelector('.upgrade-plus').addEventListener('click', () => {
+        Net.upgrade(key);
+        SFX.select();
+        row.classList.add('spent');
+        setTimeout(() => row.classList.remove('spent'), 180);
+      });
+      panel.appendChild(row);
+    });
+    upgradePanelBuilt = true;
+  }
+  function renderUpgradePanel(self) {
+    const panel = $('ingame-upgrade-panel');
+    if (self.upgradePoints <= 0) { panel.classList.add('hidden'); return; }
+    if (!upgradePanelBuilt) buildUpgradePanel();
+    panel.classList.remove('hidden');
+    panel.querySelectorAll('.upgrade-row').forEach((row) => {
+      const key = row.dataset.key;
       const rank = (self.upgrades && self.upgrades[key]) || 0;
-      const rankEl = node.querySelector('.rank-num');
-      if (rankEl) rankEl.textContent = rank;
-      node.disabled = self.upgradePoints <= 0;
+      row.querySelector('.rank-num').textContent = rank;
+      row.querySelector('.upgrade-plus').disabled = self.upgradePoints <= 0;
     });
   }
 
@@ -119,61 +148,17 @@
     setTimeout(() => el.remove(), 3600);
   }
 
-  // ---------------- level up (toast only - no forced popup) ----------------
+  // ---------------- level up (toast only - the upgrade panel shows itself) ----------------
   function onLevelUp(data) {
-    toast(`LEVEL ${data.level}!`, '+10 upgrade tokens — spend them anytime');
+    toast(`LEVEL ${data.level}!`, '+10 upgrade tokens');
     const badge = $('token-badge');
     badge.classList.add('pulse');
     setTimeout(() => badge.classList.remove('pulse'), 700);
   }
-
-  // ---------------- skill tree (opened on demand: token badge click or U key) ----------------
-  const SKILL_BRANCHES = [
-    { name: 'OFFENSE', color: 'red', keys: ['damage', 'attackSpeed', 'critChance', 'projectileSpeed'] },
-    { name: 'DEFENSE', color: 'blue', keys: ['maxHealth', 'armor', 'energyRegen'] },
-    { name: 'UTILITY', color: 'teal', keys: ['speed', 'energy', 'lifeSteal'] },
-  ];
-
-  function showLevelUp(data) {
-    const overlay = $('levelup-overlay');
-    const self = window.Game.self;
-    const tokens = self ? self.upgradePoints : (data.upgradePoints || 0);
-    $('levelup-num').textContent = tokens;
-    const grid = $('upgrade-grid');
-    grid.innerHTML = '';
-    SKILL_BRANCHES.forEach((branch) => {
-      const col = document.createElement('div');
-      col.className = 'skill-branch';
-      const label = document.createElement('div');
-      label.className = 'skill-branch-label';
-      label.textContent = branch.name;
-      col.appendChild(label);
-      branch.keys.forEach((key) => {
-        const def = UPGRADE_DEFS[key];
-        const rank = (self && self.upgrades && self.upgrades[key]) || 0;
-        const node = document.createElement('button');
-        node.className = `gbtn gbtn-${branch.color} skill-node`;
-        node.dataset.key = key;
-        node.innerHTML = `<div class="icon">${def.icon}</div><div class="name">${def.name}</div><div class="desc">${def.desc}</div><div class="rank">RANK <span class="rank-num">${rank}</span></div>`;
-        const current = window.Game.self;
-        if (!current || current.upgradePoints <= 0) node.disabled = true;
-        node.addEventListener('click', () => {
-          Net.upgrade(key);
-          SFX.select();
-          node.classList.add('spent');
-          setTimeout(() => node.classList.remove('spent'), 200);
-        });
-        col.appendChild(node);
-      });
-      grid.appendChild(col);
-    });
-    overlay.classList.remove('hidden');
-    SFX.menuOpen();
-  }
-  function closeSkillTree() { $('levelup-overlay').classList.add('hidden'); SFX.menuClose(); }
-  $('upgrade-skip').addEventListener('click', closeSkillTree);
-  $('token-badge').addEventListener('click', () => showLevelUp({}));
-  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSkillTree(); });
+  $('token-badge').addEventListener('click', () => {
+    const panel = $('ingame-upgrade-panel');
+    panel.classList.toggle('collapsed');
+  });
 
   function showEvolution(data) {
     const overlay = $('evolution-overlay');
@@ -448,12 +433,10 @@
 
   function renderSettingsPanel(body) {
     body.innerHTML = `
-      <div class="settings-row"><span>Music Volume</span><input type="range" id="s-music" min="0" max="1" step="0.05" value="${Meta.settings.musicVolume}"/></div>
       <div class="settings-row"><span>SFX Volume</span><input type="range" id="s-sfx" min="0" max="1" step="0.05" value="${Meta.settings.sfxVolume}"/></div>
       <div class="settings-row"><span>Sound Enabled</span><button class="gtoggle ${Meta.settings.soundOn ? 'on' : ''}" id="s-sound"></button></div>
       <div class="settings-row"><span>Player Name</span><input id="s-name" class="field-input" value="${escapeHtml(Meta.state.name || '')}" placeholder="3-18 characters"/></div>
       <div class="settings-row"><span style="color:var(--text-dim);font-size:12px">Online.io — server-authoritative arena · real WebSocket multiplayer</span></div>`;
-    body.querySelector('#s-music').addEventListener('input', (e) => { Meta.settings.musicVolume = parseFloat(e.target.value); Meta.save(); AudioSystem.applyVolumes(); });
     body.querySelector('#s-sfx').addEventListener('input', (e) => { Meta.settings.sfxVolume = parseFloat(e.target.value); Meta.save(); AudioSystem.applyVolumes(); });
     body.querySelector('#s-sound').addEventListener('click', (e) => { Meta.settings.soundOn = !Meta.settings.soundOn; Meta.save(); e.target.classList.toggle('on'); });
     body.querySelector('#s-name').addEventListener('change', (e) => {
@@ -485,7 +468,7 @@
   $('panel-overlay').addEventListener('click', (e) => { if (e.target.id === 'panel-overlay') closePanel(); });
 
   window.UI = {
-    onState, toast, onLevelUp, showLevelUp, showEvolution, showEventBanner, hideEventBanner,
+    onState, toast, onLevelUp, showEvolution, showEventBanner, hideEventBanner,
     announceBoss, addChatMessage, showDeathScreen, renderCurrency, refreshDailyPill,
     openPanel, closePanel,
   };

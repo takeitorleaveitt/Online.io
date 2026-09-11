@@ -1,17 +1,15 @@
 // Fully procedural sound system (WebAudio synthesis) — no external audio
-// files needed. Covers short SFX blips plus a generative ambient music bed
-// that switches mood for normal play / boss fights / big events.
+// files, no background music (SFX only, per design). Each blip layers a
+// primary oscillator with a slightly detuned second voice through a
+// lowpass filter, plus a touch of per-play pitch randomization, so
+// repeated sounds don't feel like the exact same robotic beep every time.
 (function () {
   let ctx = null;
-  let master, sfxGain, musicGain;
+  let master, sfxGain;
   let unlocked = false;
-  let musicTimer = null;
-  let musicMode = 'menu';
-  let nextNoteTime = 0;
 
   const settings = {
     get sfxVol() { return window.Meta ? window.Meta.settings.sfxVolume : 0.8; },
-    get musicVol() { return window.Meta ? window.Meta.settings.musicVolume : 0.5; },
     get muted() { return window.Meta ? !window.Meta.settings.soundOn : false; },
   };
 
@@ -20,7 +18,6 @@
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     master = ctx.createGain(); master.gain.value = 1; master.connect(ctx.destination);
     sfxGain = ctx.createGain(); sfxGain.gain.value = settings.sfxVol; sfxGain.connect(master);
-    musicGain = ctx.createGain(); musicGain.gain.value = settings.musicVol * 0.5; musicGain.connect(master);
   }
 
   function unlock() {
@@ -31,23 +28,45 @@
   }
   ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => window.addEventListener(ev, unlock, { once: true, passive: true }));
 
-  function env(node, t0, attack, decay, peak) {
+  function envGain(node, t0, attack, decay, peak) {
     node.gain.cancelScheduledValues(t0);
     node.gain.setValueAtTime(0.0001, t0);
-    node.gain.exponentialRampToValueAtTime(peak, t0 + attack);
+    node.gain.linearRampToValueAtTime(peak, t0 + attack);
     node.gain.exponentialRampToValueAtTime(0.0001, t0 + attack + decay);
   }
 
-  function tone({ freq = 440, type = 'sine', dur = 0.15, attack = 0.005, gain = 0.3, slideTo = null, dest = null }) {
+  // Layered voice: main osc + a quiet detuned second osc, both through a
+  // lowpass filter that rounds off harsh square/sawtooth edges.
+  function voice({ freq = 440, type = 'sine', dur = 0.15, attack = 0.004, gain = 0.3,
+    slideTo = null, detuneCents = 9, filterFreq = 3400, filterQ = 0.7, dest = null, jitter = 0.02 }) {
     if (!ctx || settings.muted) return;
     const t0 = ctx.currentTime;
-    const osc = ctx.createOscillator();
+    const f0 = freq * (1 + (Math.random() - 0.5) * jitter);
+    const target = dest || sfxGain;
+
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'lowpass'; filt.frequency.value = filterFreq; filt.Q.value = filterQ;
+    filt.connect(target);
+
     const g = ctx.createGain();
-    osc.type = type; osc.frequency.setValueAtTime(freq, t0);
+    envGain(g, t0, attack, dur, gain);
+    g.connect(filt);
+
+    const osc = ctx.createOscillator();
+    osc.type = type; osc.frequency.setValueAtTime(f0, t0);
     if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
-    env(g, t0, attack, dur, gain);
-    osc.connect(g); g.connect(dest || sfxGain);
+    osc.connect(g);
     osc.start(t0); osc.stop(t0 + dur + 0.05);
+
+    const g2 = ctx.createGain();
+    envGain(g2, t0, attack, dur * 0.85, gain * 0.32);
+    g2.connect(filt);
+    const osc2 = ctx.createOscillator();
+    osc2.type = type === 'square' ? 'triangle' : type;
+    osc2.frequency.setValueAtTime(f0 * Math.pow(2, detuneCents / 1200), t0);
+    if (slideTo) osc2.frequency.exponentialRampToValueAtTime(slideTo * Math.pow(2, detuneCents / 1200), t0 + dur);
+    osc2.connect(g2);
+    osc2.start(t0); osc2.stop(t0 + dur + 0.05);
   }
 
   function noiseBurst({ dur = 0.2, gain = 0.25, filterFreq = 1200, dest = null }) {
@@ -65,100 +84,40 @@
   }
 
   const SFX = {
-    collect() { tone({ freq: 700 + Math.random() * 200, type: 'sine', dur: 0.09, gain: 0.18, slideTo: 1100 }); },
-    coin() { tone({ freq: 900, type: 'triangle', dur: 0.1, gain: 0.2, slideTo: 1400 }); },
+    collect() { voice({ freq: 680 + Math.random() * 180, type: 'sine', dur: 0.1, gain: 0.16, slideTo: 1050, filterFreq: 2600 }); },
+    coin() { voice({ freq: 880, type: 'triangle', dur: 0.11, gain: 0.18, slideTo: 1300, filterFreq: 3000 }); },
     levelup() {
-      [0, 90, 180].forEach((delay, i) => setTimeout(() => tone({ freq: 440 * Math.pow(2, i / 3), type: 'square', dur: 0.22, gain: 0.22 }), delay));
+      [0, 90, 180].forEach((delay, i) => setTimeout(() => voice({ freq: 392 * Math.pow(2, i / 3), type: 'triangle', dur: 0.24, gain: 0.2, filterFreq: 4000 }), delay));
     },
     shoot(weapon) {
-      const map = { pulse: 780, scatter: 520, rail: 260, plasma: 180, laser: 1200 };
-      tone({ freq: map[weapon] || 700, type: weapon === 'laser' ? 'sawtooth' : 'square', dur: 0.07, gain: 0.14, slideTo: (map[weapon] || 700) * 0.6 });
+      const map = { pulse: 720, scatter: 480, rail: 240, plasma: 170, laser: 1000 };
+      const f = map[weapon] || 650;
+      voice({ freq: f, type: weapon === 'laser' ? 'triangle' : 'square', dur: 0.075, gain: 0.12, slideTo: f * 0.55, filterFreq: 2200, jitter: 0.06 });
     },
-    hit() { noiseBurst({ dur: 0.06, gain: 0.18, filterFreq: 2200 }); },
-    crit() { tone({ freq: 1400, type: 'square', dur: 0.08, gain: 0.22 }); noiseBurst({ dur: 0.05, gain: 0.18 }); },
-    destroy() { noiseBurst({ dur: 0.35, gain: 0.32, filterFreq: 900 }); tone({ freq: 160, type: 'sawtooth', dur: 0.4, gain: 0.2, slideTo: 40 }); },
-    damage() { tone({ freq: 180, type: 'sawtooth', dur: 0.12, gain: 0.22, slideTo: 90 }); },
-    ability() { tone({ freq: 500, type: 'sine', dur: 0.2, gain: 0.25, slideTo: 1000 }); },
-    dash() { noiseBurst({ dur: 0.12, gain: 0.15, filterFreq: 3000 }); },
-    death() {
-      noiseBurst({ dur: 0.6, gain: 0.35, filterFreq: 700 });
-      tone({ freq: 300, type: 'sawtooth', dur: 0.8, gain: 0.25, slideTo: 30 });
-    },
-    menuOpen() { tone({ freq: 520, type: 'sine', dur: 0.1, gain: 0.15, slideTo: 780 }); },
-    menuClose() { tone({ freq: 780, type: 'sine', dur: 0.1, gain: 0.15, slideTo: 480 }); },
-    click() { tone({ freq: 600, type: 'triangle', dur: 0.05, gain: 0.14 }); },
-    select() { tone({ freq: 900, type: 'triangle', dur: 0.07, gain: 0.18, slideTo: 1200 }); },
-    spawn() { tone({ freq: 220, type: 'sine', dur: 0.3, gain: 0.2, slideTo: 660 }); },
+    hit() { noiseBurst({ dur: 0.06, gain: 0.16, filterFreq: 1900 }); },
+    crit() { voice({ freq: 1300, type: 'triangle', dur: 0.09, gain: 0.2, filterFreq: 4200 }); noiseBurst({ dur: 0.05, gain: 0.15 }); },
+    destroy() { noiseBurst({ dur: 0.32, gain: 0.28, filterFreq: 800 }); voice({ freq: 150, type: 'triangle', dur: 0.38, gain: 0.18, slideTo: 40, filterFreq: 1200 }); },
+    damage() { voice({ freq: 170, type: 'triangle', dur: 0.12, gain: 0.2, slideTo: 85, filterFreq: 1400 }); },
+    ability() { voice({ freq: 480, type: 'sine', dur: 0.2, gain: 0.22, slideTo: 900, filterFreq: 3200 }); },
+    dash() { noiseBurst({ dur: 0.1, gain: 0.13, filterFreq: 2600 }); },
+    death() { noiseBurst({ dur: 0.55, gain: 0.3, filterFreq: 650 }); voice({ freq: 280, type: 'triangle', dur: 0.7, gain: 0.22, slideTo: 30, filterFreq: 900 }); },
+    menuOpen() { voice({ freq: 500, type: 'sine', dur: 0.09, gain: 0.13, slideTo: 720, filterFreq: 3000 }); },
+    menuClose() { voice({ freq: 720, type: 'sine', dur: 0.09, gain: 0.13, slideTo: 460, filterFreq: 3000 }); },
+    click() { voice({ freq: 580, type: 'triangle', dur: 0.045, gain: 0.12, filterFreq: 2800 }); },
+    select() { voice({ freq: 860, type: 'triangle', dur: 0.06, gain: 0.16, slideTo: 1150, filterFreq: 3400 }); },
+    spawn() { voice({ freq: 210, type: 'sine', dur: 0.28, gain: 0.18, slideTo: 620, filterFreq: 2200 }); },
     bossAnnounce() {
       [0, 160, 320].forEach((delay, i) => setTimeout(() => {
-        tone({ freq: 110 * (i + 1), type: 'sawtooth', dur: 0.5, gain: 0.28 });
-        noiseBurst({ dur: 0.2, gain: 0.2, filterFreq: 500 });
+        voice({ freq: 100 * (i + 1), type: 'sawtooth', dur: 0.45, gain: 0.24, filterFreq: 900 });
+        noiseBurst({ dur: 0.18, gain: 0.18, filterFreq: 450 });
       }, delay));
     },
   };
 
-  // ---------- generative ambient music ----------
-  const SCALES = {
-    calm: [220, 261.6, 293.7, 329.6, 392, 440],
-    boss: [196, 233.1, 261.6, 277.2, 329.6, 349.2],
-    event: [246.9, 293.7, 329.6, 369.9, 440, 493.9],
-  };
-
-  function scheduleNote(mode) {
-    if (!ctx) return;
-    const scale = SCALES[mode] || SCALES.calm;
-    const t0 = nextNoteTime;
-    const freq = scale[Math.floor(Math.random() * scale.length)] * (Math.random() < 0.3 ? 2 : 1);
-    const osc = ctx.createOscillator();
-    const g = ctx.createGain();
-    osc.type = mode === 'boss' ? 'sawtooth' : 'sine';
-    osc.frequency.value = freq;
-    const dur = mode === 'boss' ? 0.35 : 1.4;
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(mode === 'boss' ? 0.18 : 0.1, t0 + 0.08);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(g); g.connect(musicGain);
-    osc.start(t0); osc.stop(t0 + dur + 0.05);
-
-    if (mode !== 'boss' && Math.random() < 0.5) {
-      const bassOsc = ctx.createOscillator(); const bg = ctx.createGain();
-      bassOsc.type = 'sine'; bassOsc.frequency.value = scale[0] / 2;
-      bg.gain.setValueAtTime(0.0001, t0);
-      bg.gain.exponentialRampToValueAtTime(0.06, t0 + 0.3);
-      bg.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.2);
-      bassOsc.connect(bg); bg.connect(musicGain);
-      bassOsc.start(t0); bassOsc.stop(t0 + 2.3);
-    }
-  }
-
-  function musicLoop() {
-    if (!ctx) return;
-    const interval = musicMode === 'boss' ? 0.22 : 0.85;
-    while (nextNoteTime < ctx.currentTime + 0.6) {
-      scheduleNote(musicMode);
-      nextNoteTime += interval * (0.85 + Math.random() * 0.3);
-    }
-  }
-
-  const Music = {
-    start(mode = 'calm') {
-      ensureCtx();
-      musicMode = mode;
-      nextNoteTime = ctx.currentTime + 0.1;
-      if (musicTimer) clearInterval(musicTimer);
-      musicTimer = setInterval(musicLoop, 200);
-    },
-    setMode(mode) { musicMode = mode; },
-    stop() { if (musicTimer) clearInterval(musicTimer); musicTimer = null; },
-    setVolume(v) { if (musicGain) musicGain.gain.value = v * 0.5; },
-  };
-
   function applyVolumes() {
     if (sfxGain) sfxGain.gain.value = settings.sfxVol;
-    if (musicGain) musicGain.gain.value = settings.musicVol * 0.5;
   }
 
   window.SFX = SFX;
-  window.Music = Music;
   window.AudioSystem = { unlock, applyVolumes };
 })();

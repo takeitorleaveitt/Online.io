@@ -113,6 +113,7 @@
   }
 
   function computeInput(dt) {
+    // WASD/arrows drive movement; mouse only sets aim/fire direction (diep.io-style split controls)
     let dx = 0, dy = 0, moving = false;
     const kx = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
     const ky = (keys.KeyS || keys.ArrowDown ? 1 : 0) - (keys.KeyW || keys.ArrowUp ? 1 : 0);
@@ -121,11 +122,6 @@
       dx = kx / mag; dy = ky / mag; moving = true;
     } else if (isMobile) {
       dx = mobileMove.dx; dy = mobileMove.dy; moving = mobileMove.moving;
-    } else {
-      const cx = W / 2, cy = H / 2;
-      const mdx = mouse.x - cx, mdy = mouse.y - cy;
-      const dist = Math.hypot(mdx, mdy);
-      if (dist > 12) { dx = mdx / dist; dy = mdy / dist; moving = true; }
     }
     let aimAngle;
     if (isMobile) aimAngle = moving ? Math.atan2(dy, dx) : input.aimAngle;
@@ -251,7 +247,6 @@
     if (rafId) cancelAnimationFrame(rafId);
     SFX.death();
     triggerShake(20, 0.5);
-    Music.stop();
     const earned = window.Meta ? Meta.recordMatchResult(stats) : 0;
     if (window.UI) window.UI.showDeathScreen(stats, earned);
   });
@@ -266,18 +261,15 @@
 
   Net.on('worldEvent', (data) => {
     if (window.UI) window.UI.showEventBanner(data);
-    if (data.type === 'redMoon' || data.type === 'chaos') Music.setMode('boss');
   });
-  Net.on('worldEventEnd', () => { if (window.UI) window.UI.hideEventBanner(); Music.setMode(curSnap && curSnap.boss ? 'boss' : 'calm'); });
+  Net.on('worldEventEnd', () => { if (window.UI) window.UI.hideEventBanner(); });
 
   Net.on('bossSpawned', (data) => {
     if (window.UI) window.UI.announceBoss(data);
     SFX.bossAnnounce();
-    Music.setMode('boss');
   });
   Net.on('bossDefeated', (data) => {
     if (window.UI) window.UI.toast('BOSS DEFEATED', data.topName ? `Top damage: ${data.topName}` : '');
-    Music.setMode('calm');
     if (window.Meta && data.topName) Meta.unlockAchievement('boss_slayer');
   });
 
@@ -290,23 +282,28 @@
   }
 
   // ---------------- rendering ----------------
+  // flat-shaded shapes with a dark outline (diep.io style) - each fills
+  // AND strokes the body path
   const BODY_DRAW = {
-    core(ctx, r) { ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); },
+    core(ctx, r) { ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); },
     hex(ctx, r) {
       ctx.beginPath();
       for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; const px = Math.cos(a) * r, py = Math.sin(a) * r; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
-      ctx.closePath(); ctx.fill();
+      ctx.closePath(); ctx.fill(); ctx.stroke();
     },
     spike(ctx, r) {
       ctx.beginPath();
       for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; const rr = i % 2 === 0 ? r : r * 0.62; const px = Math.cos(a) * rr, py = Math.sin(a) * rr; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
-      ctx.closePath(); ctx.fill();
+      ctx.closePath(); ctx.fill(); ctx.stroke();
     },
     orb(ctx, r) {
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#ffffff88'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, r + 6, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.55, 0, Math.PI * 2); ctx.stroke();
     },
   };
+
+  const OUTLINE = 'rgba(0,0,0,0.32)';
+  const BARREL_FILL = '#8b909c';
 
   function lerpAngle(a, b, t) {
     let diff = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
@@ -326,13 +323,13 @@
   function drawZones() {
     if (!joinInfo) return;
     for (const z of joinInfo.zones) {
-      ctx.fillStyle = z.color + '22';
+      ctx.fillStyle = z.color + '30';
       ctx.fillRect(z.x0, z.y0, z.x1 - z.x0, z.y1 - z.y0);
-      ctx.strokeStyle = z.color + '55';
+      ctx.strokeStyle = z.color + '80';
       ctx.lineWidth = 3;
       ctx.strokeRect(z.x0, z.y0, z.x1 - z.x0, z.y1 - z.y0);
     }
-    ctx.strokeStyle = '#ff5a5a55';
+    ctx.strokeStyle = '#00000033';
     ctx.lineWidth = 8;
     ctx.strokeRect(0, 0, joinInfo.worldSize, joinInfo.worldSize);
   }
@@ -341,7 +338,7 @@
     const gridSize = 200;
     const left = camera.x - W / camera.zoom / 2 - gridSize, right = camera.x + W / camera.zoom / 2 + gridSize;
     const top = camera.y - H / camera.zoom / 2 - gridSize, bottom = camera.y + H / camera.zoom / 2 + gridSize;
-    ctx.strokeStyle = '#ffffff0a'; ctx.lineWidth = 1 / camera.zoom;
+    ctx.strokeStyle = '#00000014'; ctx.lineWidth = 1 / camera.zoom;
     for (let x = Math.floor(left / gridSize) * gridSize; x < right; x += gridSize) { ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke(); }
     for (let y = Math.floor(top / gridSize) * gridSize; y < bottom; y += gridSize) { ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke(); }
   }
@@ -349,31 +346,38 @@
   function drawResource(r) {
     ctx.save();
     ctx.translate(r.x, r.y);
-    ctx.shadowColor = r.c; ctx.shadowBlur = 10;
+    const pulse = 1 + Math.sin(performance.now() / 250 + r.id) * 0.06;
     ctx.fillStyle = r.c;
-    const pulse = 1 + Math.sin(performance.now() / 250 + r.id) * 0.08;
-    ctx.beginPath(); ctx.arc(0, 0, r.r * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(0, 0, r.r * pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.restore();
   }
 
   function drawProjectile(p) {
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.rotate(p.a || 0);
-    ctx.shadowColor = p.c; ctx.shadowBlur = 12;
     ctx.fillStyle = p.c;
-    ctx.beginPath(); ctx.ellipse(0, 0, p.r * 1.8, p.r, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 0.35;
-    ctx.beginPath(); ctx.ellipse(-p.r * 2.4, 0, p.r * 2, p.r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.restore();
   }
 
   function drawHealthBar(x, y, w, hp, mhp, color) {
     const pct = Math.max(0, hp / mhp);
-    ctx.fillStyle = '#00000088';
+    ctx.fillStyle = '#00000055';
+    ctx.fillRect(x - w / 2 - 1.5, y - 1.5, w + 3, 9);
+    ctx.fillStyle = '#3a3a3a';
     ctx.fillRect(x - w / 2, y, w, 6);
-    ctx.fillStyle = color || '#6bffb0';
+    ctx.fillStyle = color || '#5fd15f';
     ctx.fillRect(x - w / 2, y, w * pct, 6);
+  }
+
+  function drawBarrel(radius, len, width) {
+    ctx.fillStyle = BARREL_FILL;
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.rect(radius * 0.15, -width / 2, len, width);
+    ctx.fill(); ctx.stroke();
   }
 
   function drawPlayer(p, isSelf) {
@@ -381,26 +385,34 @@
     ctx.translate(p.x, p.y);
     if (p.sh) {
       ctx.save();
-      ctx.strokeStyle = '#5ad1ffaa'; ctx.lineWidth = 3; ctx.shadowColor = '#5ad1ff'; ctx.shadowBlur = 16;
+      ctx.strokeStyle = '#4db8f0cc'; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.arc(0, 0, p.r + 8, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
+
+    ctx.save();
     ctx.rotate(p.a || 0);
-    ctx.shadowColor = p.c; ctx.shadowBlur = isSelf ? 18 : 10;
+    drawBarrel(p.r, p.r * 1.5, p.r * 0.6);
+    ctx.restore();
+
     ctx.fillStyle = p.c;
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = Math.max(2.5, p.r * 0.11);
     (BODY_DRAW[p.b] || BODY_DRAW.core)(ctx, p.r);
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#ffffffcc';
-    ctx.beginPath(); ctx.arc(p.r * 0.4, 0, p.r * 0.18, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
 
     ctx.save();
     ctx.translate(p.x, p.y);
-    ctx.font = `${isSelf ? 13 : 12}px Rajdhani, sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillStyle = p.bot ? '#8ea0c2' : '#eaf2ff';
-    ctx.fillText(`${p.n}${p.bot ? '' : ''}  Lv${p.lvl}`, 0, -p.r - 14);
-    if (p.hp < p.mhp) drawHealthBar(0, -p.r - 10, Math.max(30, p.r), p.hp, p.mhp);
+    ctx.font = `700 ${isSelf ? 14 : 13}px 'Baloo 2', sans-serif`;
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillText(p.n, 0, -p.r - 14);
+    if (p.hp < p.mhp) drawHealthBar(0, -p.r - 10, Math.max(30, p.r * 1.3), p.hp, p.mhp);
+    if (isSelf) {
+      ctx.font = `600 12px 'Baloo 2', sans-serif`;
+      ctx.fillStyle = '#3a3a3a';
+      ctx.fillText(`Score: ${Math.round(p._score || 0)}`, 0, p.r + 22);
+      ctx.fillText(`Lv${p.lvl}`, 0, p.r + 38);
+    }
     ctx.restore();
   }
 
@@ -408,25 +420,22 @@
     ctx.save();
     ctx.translate(e.x, e.y);
     ctx.rotate(e.a || 0);
-    ctx.shadowColor = e.c; ctx.shadowBlur = 12;
     ctx.fillStyle = e.c;
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 3;
     ctx.beginPath();
     for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; const rr = i % 2 === 0 ? e.r : e.r * 0.7; const px = Math.cos(a) * rr, py = Math.sin(a) * rr; i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
-    ctx.closePath(); ctx.fill();
+    ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.restore();
-    drawHealthBar(e.x, e.y - e.r - 12, e.r * 1.6, e.hp, e.mhp, '#8fa6ff');
+    drawHealthBar(e.x, e.y - e.r - 12, e.r * 1.6, e.hp, e.mhp, '#5fd15f');
   }
 
   function drawBoss(b) {
     ctx.save();
     ctx.translate(b.x, b.y);
-    const pulse = 1 + Math.sin(performance.now() / 300) * 0.03;
-    ctx.shadowColor = '#ff3b3b'; ctx.shadowBlur = 40;
-    ctx.fillStyle = '#ff3b3b';
-    ctx.beginPath(); ctx.arc(0, 0, b.r * pulse, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = '#ffffff55'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(0, 0, b.r + 10, 0, Math.PI * 2); ctx.stroke();
+    const pulse = 1 + Math.sin(performance.now() / 300) * 0.02;
+    ctx.fillStyle = '#e05252';
+    ctx.strokeStyle = OUTLINE; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(0, 0, b.r * pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.restore();
   }
 
@@ -488,7 +497,7 @@
     }
 
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.fillStyle = '#060911';
+    ctx.fillStyle = '#cfcfcf';
     ctx.fillRect(0, 0, W, H);
 
     const shakeX = shake.mag > 0.1 ? (Math.random() - 0.5) * shake.mag : 0;
@@ -522,7 +531,7 @@
       }
       // draw local player at predicted position, using server-driven cosmetic/status flags
       const selfVisual = findById(curSnap.players, curSnap.self.id);
-      if (selfVisual) drawPlayer({ ...selfVisual, x: predicted.x, y: predicted.y, a: input.aimAngle }, true);
+      if (selfVisual) drawPlayer({ ...selfVisual, x: predicted.x, y: predicted.y, a: input.aimAngle, _score: curSnap.self.score }, true);
 
       if (curSnap.boss) {
         const bossInterp = prevSnap.boss ? { ...curSnap.boss, x: prevSnap.boss.x + (curSnap.boss.x - prevSnap.boss.x) * alpha, y: prevSnap.boss.y + (curSnap.boss.y - prevSnap.boss.y) * alpha } : curSnap.boss;
@@ -553,7 +562,6 @@
       detectMobile();
       canvas.classList.remove('hidden');
       rafId = requestAnimationFrame(frame);
-      Music.start('calm');
     },
     stop() {
       running = false;
