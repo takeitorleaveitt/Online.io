@@ -104,7 +104,7 @@ input { font-family: inherit; }
 #bg-canvas, #game-canvas {
   position: fixed; inset: 0; width: 100%; height: 100%; display: block;
 }
-#game-canvas { z-index: 1; background: #cfcfcf; }
+#game-canvas { z-index: 1; background: #cccccc; }
 #bg-canvas { z-index: 0; }
 
 /* ================= MENU ================= */
@@ -220,8 +220,8 @@ input[type=range] { width: 140px; accent-color: var(--accent); }
 
 .hud-top-right {
   position: fixed; top: 14px; right: 14px; width: 210px;
-  background: #0a0f1cc0; border: 3px solid var(--ink); border-radius: 14px; padding: 10px 12px;
-  box-shadow: 0 4px 0 #00000060;
+  background: #12161fcc; backdrop-filter: blur(6px); border: 1px solid #ffffff1a; border-radius: 16px; padding: 12px 14px;
+  box-shadow: 0 6px 18px #00000030;
 }
 .lb-title { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 12px; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 6px; text-align: center; }
 #lb-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
@@ -295,15 +295,18 @@ input[type=range] { width: 140px; accent-color: var(--accent); }
    automatically whenever tokens are available, never blocks gameplay */
 .ingame-upgrade-panel {
   position: fixed; left: 14px; bottom: 140px; z-index: 4; width: 230px;
-  display: flex; flex-direction: column; gap: 4px;
-  background: #1c1f26ee; border: 2px solid #000; border-radius: 10px; padding: 8px;
-  box-shadow: 0 4px 0 #00000060;
+  display: flex; flex-direction: column; gap: 5px;
+  background: #12161fcc; backdrop-filter: blur(6px); border: 1px solid #ffffff1a; border-radius: 14px; padding: 10px;
+  box-shadow: 0 6px 18px #00000030;
+  animation: floatIn .2s ease both;
 }
 .ingame-upgrade-panel.collapsed .upgrade-row { display: none; }
 .upgrade-row {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  background: #ffffff14; border-radius: 6px; padding: 4px 6px 4px 10px;
+  background: #ffffff12; border-radius: 8px; padding: 5px 6px 5px 10px;
+  transition: background .12s;
 }
+.upgrade-row:hover { background: #ffffff1e; }
 .upgrade-row.spent { animation: rowSpent .18s ease; }
 @keyframes rowSpent { 0% { transform: scale(1); } 50% { transform: scale(.96); } 100% { transform: scale(1); } }
 .upgrade-row-name { font-family: 'Baloo 2', sans-serif; font-size: 11px; color: #eaf2ff; font-weight: 600; }

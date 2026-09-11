@@ -4,7 +4,7 @@
 
 module.exports = {
   TICK_RATE: 30,                // server simulation ticks per second
-  BROADCAST_RATE: 24,           // snapshots sent to clients per second
+  BROADCAST_RATE: 30,           // snapshots sent to clients per second (matches tick rate)
   WORLD_SIZE: 6000,             // world is WORLD_SIZE x WORLD_SIZE units
 
   MAX_PLAYERS_PER_ROOM: 60,

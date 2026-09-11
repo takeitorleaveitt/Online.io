@@ -13,6 +13,7 @@
   let prevSnap = null, curSnap = null, prevRecvAt = 0, curRecvAt = 0;
   let predicted = { x: 0, y: 0, inited: false };
   let serverSelfTarget = null;
+  let bgGrad = null;
   let camera = { x: 0, y: 0, zoom: 1 };
   let shake = { t: 0, mag: 0 };
   let running = false;
@@ -497,7 +498,13 @@
     }
 
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.fillStyle = '#cfcfcf';
+    if (!bgGrad || bgGrad.w !== W || bgGrad.h !== H) {
+      const g = ctx.createRadialGradient(W / 2, H * 0.4, 0, W / 2, H * 0.4, Math.max(W, H) * 0.75);
+      g.addColorStop(0, '#d6d6d6');
+      g.addColorStop(1, '#c4c4c4');
+      bgGrad = g; bgGrad.w = W; bgGrad.h = H;
+    }
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, W, H);
 
     const shakeX = shake.mag > 0.1 ? (Math.random() - 0.5) * shake.mag : 0;
@@ -512,9 +519,11 @@
     drawZones();
 
     if (curSnap) {
-      const dtServer = Math.max(40, curRecvAt - prevRecvAt);
+      const dtServer = Math.max(30, curRecvAt - prevRecvAt);
       let alpha = (performance.now() - curRecvAt) / dtServer;
-      alpha = Math.max(0, Math.min(1, alpha));
+      // allow a little extrapolation past the last snapshot instead of freezing
+      // motion dead when a packet is slightly late - smooths out network jitter
+      alpha = Math.max(0, Math.min(1.6, alpha));
 
       for (const r of curSnap.resources) drawResource(r);
 

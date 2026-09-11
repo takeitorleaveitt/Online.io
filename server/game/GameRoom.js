@@ -215,7 +215,7 @@ class GameRoom {
     this.applyMagnetPulls(dt, now);
     this.separatePlayers();
     this.updateProjectiles(dt, now);
-    this.updateResourcePickups(now);
+    this.updateResourcePickups(dt, now);
     this.updateEnemies(dt, now);
     this.updateBoss(dt, now);
 
@@ -372,11 +372,17 @@ class GameRoom {
     if (target.kind === 'player' && !target.alive) return 0;
     if (target.kind === 'player' && now - target.spawnedAt < C.SPAWN_GRACE_MS) rawAmount *= 0.1;
     if (target.effects && target.effects.shieldUntil && now < target.effects.shieldUntil) rawAmount *= 0.3;
-    // a bot several levels above a real, low-level player hits softer - keeps
-    // long-surviving "dangerous" bots from just steamrolling every newcomer
+    // bots hit real players softer across the board, and hit even softer the
+    // more levels they're ahead - keeps the game approachable for newcomers
+    // rather than getting steamrolled by long-surviving "dangerous" bots
     if (source && source.kind === 'player' && source.isBot && target.kind === 'player' && !target.isBot) {
+      rawAmount *= 0.6;
       const gap = source.level - target.level;
-      if (gap > 3) rawAmount *= Math.max(0.35, 1 - (gap - 3) * 0.07);
+      if (gap > 2) rawAmount *= Math.max(0.3, 1 - (gap - 2) * 0.08);
+    }
+    // real players hit bots harder - bots should feel killable, not spongy
+    if (source && source.kind === 'player' && !source.isBot && target.kind === 'player' && target.isBot) {
+      rawAmount *= 1.35;
     }
     const armor = target.armor || 0;
     const mitigated = rawAmount * (100 / (100 + armor));
@@ -478,18 +484,30 @@ class GameRoom {
     }
   }
 
-  updateResourcePickups(now) {
+  updateResourcePickups(dt, now) {
+    const flowRadius = 130;
     for (const player of this.players.values()) {
       if (!player.alive) continue;
+      const pickupR = player.radius + 6;
+      const flowR2 = flowRadius * flowRadius;
       for (const res of this.resources.values()) {
-        const rr = player.radius + res.radius;
-        if (dist2(player, res) > rr * rr) continue;
-        this.resources.delete(res.id);
-        player.resourcesCollected += 1;
-        player.score += res.value;
-        this.grantXPTo(player, res.xp);
-        const nr = createResource();
-        this.resources.set(nr.id, nr);
+        const d2 = dist2(player, res);
+        if (d2 <= pickupR * pickupR) {
+          this.resources.delete(res.id);
+          player.resourcesCollected += 1;
+          player.score += res.value;
+          this.grantXPTo(player, res.xp);
+          const nr = createResource();
+          this.resources.set(nr.id, nr);
+          continue;
+        }
+        // passive "flow toward you" magnetism at short range - gets stronger the closer it is
+        if (d2 <= flowR2) {
+          const d = Math.sqrt(d2) || 1;
+          const pull = 620 * (1 - d / flowRadius) + 60;
+          res.x += (player.x - res.x) / d * pull * dt;
+          res.y += (player.y - res.y) / d * pull * dt;
+        }
       }
     }
   }
