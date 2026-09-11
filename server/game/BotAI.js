@@ -4,13 +4,15 @@
 // like a real client would - the GameRoom simulates bots through the same
 // movement/combat code path used for real players.
 
+const { SPAWN_GRACE_MS } = require('./constants');
+
 const PERSONALITIES = ['aggressive', 'defensive', 'hunter', 'passive'];
 
 function pickPersonality() {
   const r = Math.random();
-  if (r < 0.28) return 'aggressive';
+  if (r < 0.22) return 'aggressive';
   if (r < 0.52) return 'defensive';
-  if (r < 0.74) return 'hunter';
+  if (r < 0.66) return 'hunter';
   return 'passive';
 }
 
@@ -31,11 +33,12 @@ function findNearest(list, from, maxRange, filter) {
 function decide(bot, room) {
   const now = Date.now();
   const survivalMs = now - bot.spawnedAt;
-  const boldness = Math.min(1.6, 0.9 + survivalMs / 240000); // grows bolder over ~4 minutes
+  const boldness = Math.min(1.5, 0.65 + survivalMs / 300000); // grows bolder as the bot survives, starts cautious
 
   const players = [];
   for (const p of room.players.values()) {
-    if (p.id !== bot.id && p.alive) players.push(p);
+    // ignore players still in spawn grace - don't pile onto someone who just joined
+    if (p.id !== bot.id && p.alive && now - p.spawnedAt >= SPAWN_GRACE_MS) players.push(p);
   }
   const enemies = [...room.enemies.values()];
   const resources = [...room.resources.values()];

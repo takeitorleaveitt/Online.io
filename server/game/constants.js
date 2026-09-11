@@ -4,7 +4,7 @@
 
 module.exports = {
   TICK_RATE: 30,                // server simulation ticks per second
-  BROADCAST_RATE: 15,           // snapshots sent to clients per second
+  BROADCAST_RATE: 20,           // snapshots sent to clients per second
   WORLD_SIZE: 6000,             // world is WORLD_SIZE x WORLD_SIZE units
 
   MAX_PLAYERS_PER_ROOM: 60,
@@ -33,6 +33,7 @@ module.exports = {
   XP_PER_LEVEL_BASE: 100,
   XP_PER_LEVEL_GROWTH: 1.18,
   MAX_LEVEL: 60,
+  BOT_MAX_LEVEL: 22,             // keeps long-surviving bots dangerous but not endgame-boss-tier
 
   ZONES: [
     { id: 'grasslands', name: 'Grasslands', color: '#2e7d46', x: 0.00, y: 0.00, w: 0.34, h: 0.34, resourceMul: 1.0 },

@@ -27,11 +27,17 @@
   });
 
   function currentLoadout() {
-    let name = $('name-input').value.trim().slice(0, 16);
+    let name = $('name-input').value.trim().slice(0, 18);
     if (!name) name = `Player${Math.floor(Math.random() * 9000 + 1000)}`;
     Meta.state.name = name; Meta.save();
     return { name, color: Meta.state.selected.color, bodyShape: Meta.state.selected.shape };
   }
+
+  const NAME_CHANGE_MESSAGES = {
+    length: 'Name must be 3-18 characters — we picked one for you',
+    profanity: "That name isn't allowed — we picked one for you",
+    taken: 'That name was taken, so we adjusted it',
+  };
 
   function startConnecting() {
     hide('screen-menu'); hide('screen-death');
@@ -50,18 +56,35 @@
   Net.on('joined', (data) => {
     $('connecting-title').textContent = 'CONNECTED';
     $('connecting-sub').innerHTML = `${data.realCount} PLAYERS ONLINE &middot; ${data.botCount} BOTS<br/>ENTERING ${data.roomName}`;
+    if (data.name && data.name !== Meta.state.name) {
+      Meta.state.name = data.name; Meta.save();
+      $('name-input').value = data.name;
+    }
+    if (data.nameChanged) {
+      UI.toast('NAME UPDATED', `${NAME_CHANGE_MESSAGES[data.nameChangeReason] || 'Name adjusted'} — now "${data.name}"`);
+    }
     setTimeout(() => {
       hide('screen-connecting');
       show('hud');
       MenuBackground.stop();
       Game.start();
+      const hint = $('controls-hint');
+      hint.classList.remove('hidden');
+      hint.style.animation = 'none'; void hint.offsetWidth; hint.style.animation = '';
+      setTimeout(() => hint.classList.add('hidden'), 5000);
     }, 550);
   });
 
   $('btn-play').addEventListener('click', doPlay);
   $('name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') doPlay(); });
+  $('name-input').addEventListener('input', (e) => {
+    const len = e.target.value.trim().length;
+    const hint = $('name-hint');
+    if (len > 0 && len < 3) { hint.textContent = 'Name must be at least 3 characters'; hint.classList.add('error'); hint.classList.remove('hidden'); }
+    else { hint.classList.add('hidden'); hint.classList.remove('error'); }
+  });
 
-  document.querySelectorAll('.menu-btn[data-panel]').forEach((btn) => {
+  document.querySelectorAll('[data-panel]').forEach((btn) => {
     btn.addEventListener('click', () => { SFX.click(); UI.openPanel(btn.dataset.panel); });
   });
 

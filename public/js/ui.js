@@ -85,6 +85,26 @@
 
     $('pop-real').textContent = data.realCount;
     $('pop-bots').textContent = data.botCount;
+
+    const tokenEl = $('hud-tokens');
+    if (tokenEl.textContent != self.upgradePoints) {
+      tokenEl.textContent = self.upgradePoints;
+      $('token-badge').classList.toggle('has-tokens', self.upgradePoints > 0);
+    }
+    refreshSkillTreeIfOpen(self);
+  }
+
+  function refreshSkillTreeIfOpen(self) {
+    const overlay = $('levelup-overlay');
+    if (!overlay || overlay.classList.contains('hidden')) return;
+    $('levelup-num').textContent = self.upgradePoints;
+    overlay.querySelectorAll('.skill-node').forEach((node) => {
+      const key = node.dataset.key;
+      const rank = (self.upgrades && self.upgrades[key]) || 0;
+      const rankEl = node.querySelector('.rank-num');
+      if (rankEl) rankEl.textContent = rank;
+      node.disabled = self.upgradePoints <= 0;
+    });
   }
 
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -99,26 +119,61 @@
     setTimeout(() => el.remove(), 3600);
   }
 
-  // ---------------- level up / evolution ----------------
+  // ---------------- level up (toast only - no forced popup) ----------------
+  function onLevelUp(data) {
+    toast(`LEVEL ${data.level}!`, '+10 upgrade tokens — spend them anytime');
+    const badge = $('token-badge');
+    badge.classList.add('pulse');
+    setTimeout(() => badge.classList.remove('pulse'), 700);
+  }
+
+  // ---------------- skill tree (opened on demand: token badge click or U key) ----------------
+  const SKILL_BRANCHES = [
+    { name: 'OFFENSE', color: 'red', keys: ['damage', 'attackSpeed', 'critChance', 'projectileSpeed'] },
+    { name: 'DEFENSE', color: 'blue', keys: ['maxHealth', 'armor', 'energyRegen'] },
+    { name: 'UTILITY', color: 'teal', keys: ['speed', 'energy', 'lifeSteal'] },
+  ];
+
   function showLevelUp(data) {
     const overlay = $('levelup-overlay');
-    $('levelup-num').textContent = data.level;
+    const self = window.Game.self;
+    const tokens = self ? self.upgradePoints : (data.upgradePoints || 0);
+    $('levelup-num').textContent = tokens;
     const grid = $('upgrade-grid');
     grid.innerHTML = '';
-    Object.entries(UPGRADE_DEFS).forEach(([key, def]) => {
-      const card = document.createElement('div');
-      card.className = 'upgrade-card';
-      card.innerHTML = `<div class="icon">${def.icon}</div><div class="name">${def.name}</div><div class="desc">${def.desc}</div>`;
-      card.addEventListener('click', () => {
-        Net.upgrade(key);
-        SFX.select();
-        overlay.classList.add('hidden');
+    SKILL_BRANCHES.forEach((branch) => {
+      const col = document.createElement('div');
+      col.className = 'skill-branch';
+      const label = document.createElement('div');
+      label.className = 'skill-branch-label';
+      label.textContent = branch.name;
+      col.appendChild(label);
+      branch.keys.forEach((key) => {
+        const def = UPGRADE_DEFS[key];
+        const rank = (self && self.upgrades && self.upgrades[key]) || 0;
+        const node = document.createElement('button');
+        node.className = `gbtn gbtn-${branch.color} skill-node`;
+        node.dataset.key = key;
+        node.innerHTML = `<div class="icon">${def.icon}</div><div class="name">${def.name}</div><div class="desc">${def.desc}</div><div class="rank">RANK <span class="rank-num">${rank}</span></div>`;
+        const current = window.Game.self;
+        if (!current || current.upgradePoints <= 0) node.disabled = true;
+        node.addEventListener('click', () => {
+          Net.upgrade(key);
+          SFX.select();
+          node.classList.add('spent');
+          setTimeout(() => node.classList.remove('spent'), 200);
+        });
+        col.appendChild(node);
       });
-      grid.appendChild(card);
+      grid.appendChild(col);
     });
     overlay.classList.remove('hidden');
+    SFX.menuOpen();
   }
-  $('upgrade-skip').addEventListener('click', () => { $('levelup-overlay').classList.add('hidden'); SFX.click(); });
+  function closeSkillTree() { $('levelup-overlay').classList.add('hidden'); SFX.menuClose(); }
+  $('upgrade-skip').addEventListener('click', closeSkillTree);
+  $('token-badge').addEventListener('click', () => showLevelUp({}));
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSkillTree(); });
 
   function showEvolution(data) {
     const overlay = $('evolution-overlay');
@@ -127,10 +182,10 @@
     grid.innerHTML = '';
     const joinInfo = window.Game.joinInfo;
     Object.entries(joinInfo.evolutions).forEach(([key, def]) => {
-      const card = document.createElement('div');
+      const card = document.createElement('button');
       card.className = 'evolution-card';
-      card.style.borderColor = def.color;
-      card.innerHTML = `<div class="name" style="color:${def.color}">${def.name.toUpperCase()}</div><div class="desc">${EVOLUTION_DESC[key] || ''}</div>`;
+      card.style.setProperty('--face', def.color);
+      card.innerHTML = `<div class="name">${def.name.toUpperCase()}</div><div class="desc">${EVOLUTION_DESC[key] || ''}</div>`;
       card.addEventListener('click', () => {
         Net.evolve(key);
         SFX.select();
@@ -225,7 +280,7 @@
     Meta.SHAPES.forEach((s) => {
       const owned = Meta.state.unlocked.shape.includes(s.id);
       const btn = document.createElement('button');
-      btn.className = 'pill-btn' + (Meta.state.selected.shape === s.id ? ' selected' : '');
+      btn.className = `gbtn gbtn-sm ${Meta.state.selected.shape === s.id ? 'gbtn-green selected' : 'gbtn-blue'}`;
       btn.innerHTML = s.name + (owned ? '' : `<span class="cost">⬡${s.cost}</span>`);
       btn.addEventListener('click', () => {
         if (!owned && !Meta.unlockCosmetic('shape', s.id, s.cost)) { toast('NOT ENOUGH COINS', ''); return; }
@@ -237,7 +292,7 @@
     Meta.TRAILS.forEach((s) => {
       const owned = Meta.state.unlocked.trail.includes(s.id);
       const btn = document.createElement('button');
-      btn.className = 'pill-btn' + (Meta.state.selected.trail === s.id ? ' selected' : '');
+      btn.className = `gbtn gbtn-sm ${Meta.state.selected.trail === s.id ? 'gbtn-green selected' : 'gbtn-blue'}`;
       btn.innerHTML = s.name + (owned ? '' : `<span class="cost">⬡${s.cost}</span>`);
       btn.addEventListener('click', () => {
         if (!owned && !Meta.unlockCosmetic('trail', s.id, s.cost)) { toast('NOT ENOUGH COINS', ''); return; }
@@ -303,7 +358,7 @@
 
   function renderMissionsPanel(body) {
     Meta.refreshMissionsIfNeeded();
-    body.innerHTML = '<div class="tab-row"><button class="tab-btn active" data-t="missions">DAILY MISSIONS</button><button class="tab-btn" data-t="achievements">ACHIEVEMENTS</button></div><div id="missions-body"></div>';
+    body.innerHTML = '<div class="gtabs"><button class="gtab active" data-t="missions">DAILY MISSIONS</button><button class="gtab" data-t="achievements">ACHIEVEMENTS</button></div><div id="missions-body"></div>';
     const mbody = body.querySelector('#missions-body');
     function renderMissions() {
       mbody.innerHTML = '';
@@ -317,7 +372,7 @@
             <div class="mission-progress-wrap"><div class="mission-progress-fill" style="width:${Math.min(100, (m.progress / m.goal) * 100)}%"></div></div>
           </div>
           <div class="mission-reward">⬡${m.reward}</div>
-          <button class="pill-btn" ${done && !m.claimed ? '' : 'disabled'} style="${m.claimed ? 'opacity:.4' : ''}">${m.claimed ? 'CLAIMED' : (done ? 'CLAIM' : `${m.progress}/${m.goal}`)}</button>`;
+          <button class="gbtn gbtn-sm ${done && !m.claimed ? 'gbtn-green' : 'gbtn-gray'}" ${done && !m.claimed ? '' : 'disabled'}>${m.claimed ? 'CLAIMED' : (done ? 'CLAIM' : `${m.progress}/${m.goal}`)}</button>`;
         row.querySelector('button').addEventListener('click', () => { if (Meta.claimMission(m.id)) { SFX.select(); renderMissions(); renderCurrency(); } });
         mbody.appendChild(row);
       });
@@ -333,9 +388,9 @@
       });
     }
     renderMissions();
-    body.querySelectorAll('.tab-btn').forEach((btn) => {
+    body.querySelectorAll('.gtab').forEach((btn) => {
       btn.addEventListener('click', () => {
-        body.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+        body.querySelectorAll('.gtab').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         SFX.click();
         if (btn.dataset.t === 'missions') renderMissions(); else renderAchievements();
@@ -378,7 +433,7 @@
       sec.items.forEach((it) => {
         const owned = Meta.state.unlocked[sec.type].includes(it.id);
         const btn = document.createElement('button');
-        btn.className = 'pill-btn';
+        btn.className = `gbtn gbtn-sm ${owned ? 'gbtn-gray' : 'gbtn-orange'}`;
         btn.innerHTML = (sec.type === 'color' ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${it.id};margin-right:6px"></span>` : '') + (it.name || it.id) + (owned ? ' ✓' : `<span class="cost">⬡${it.cost}</span>`);
         btn.addEventListener('click', () => {
           if (owned) { toast('ALREADY OWNED', ''); return; }
@@ -395,13 +450,17 @@
     body.innerHTML = `
       <div class="settings-row"><span>Music Volume</span><input type="range" id="s-music" min="0" max="1" step="0.05" value="${Meta.settings.musicVolume}"/></div>
       <div class="settings-row"><span>SFX Volume</span><input type="range" id="s-sfx" min="0" max="1" step="0.05" value="${Meta.settings.sfxVolume}"/></div>
-      <div class="settings-row"><span>Sound Enabled</span><button class="toggle ${Meta.settings.soundOn ? 'on' : ''}" id="s-sound"></button></div>
-      <div class="settings-row"><span>Player Name</span><input id="s-name" value="${escapeHtml(Meta.state.name || '')}" placeholder="Your name" style="background:#101a2e;border:1px solid var(--panel-border);color:#fff;border-radius:8px;padding:6px 10px;"/></div>
+      <div class="settings-row"><span>Sound Enabled</span><button class="gtoggle ${Meta.settings.soundOn ? 'on' : ''}" id="s-sound"></button></div>
+      <div class="settings-row"><span>Player Name</span><input id="s-name" class="field-input" value="${escapeHtml(Meta.state.name || '')}" placeholder="3-18 characters"/></div>
       <div class="settings-row"><span style="color:var(--text-dim);font-size:12px">Online.io — server-authoritative arena · real WebSocket multiplayer</span></div>`;
     body.querySelector('#s-music').addEventListener('input', (e) => { Meta.settings.musicVolume = parseFloat(e.target.value); Meta.save(); AudioSystem.applyVolumes(); });
     body.querySelector('#s-sfx').addEventListener('input', (e) => { Meta.settings.sfxVolume = parseFloat(e.target.value); Meta.save(); AudioSystem.applyVolumes(); });
     body.querySelector('#s-sound').addEventListener('click', (e) => { Meta.settings.soundOn = !Meta.settings.soundOn; Meta.save(); e.target.classList.toggle('on'); });
-    body.querySelector('#s-name').addEventListener('change', (e) => { Meta.state.name = e.target.value.slice(0, 16); Meta.save(); const ni = document.getElementById('name-input'); if (ni) ni.value = Meta.state.name; });
+    body.querySelector('#s-name').addEventListener('change', (e) => {
+      const v = e.target.value.trim().slice(0, 18);
+      Meta.state.name = v; Meta.save();
+      const ni = document.getElementById('name-input'); if (ni) ni.value = v;
+    });
   }
 
   const PANEL_RENDERERS = {
@@ -426,7 +485,7 @@
   $('panel-overlay').addEventListener('click', (e) => { if (e.target.id === 'panel-overlay') closePanel(); });
 
   window.UI = {
-    onState, toast, showLevelUp, showEvolution, showEventBanner, hideEventBanner,
+    onState, toast, onLevelUp, showLevelUp, showEvolution, showEventBanner, hideEventBanner,
     announceBoss, addChatMessage, showDeathScreen, renderCurrency, refreshDailyPill,
     openPanel, closePanel,
   };

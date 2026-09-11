@@ -1,6 +1,6 @@
 const { PLAYER_BASE_RADIUS, PLAYER_MAX_RADIUS, PLAYER_BASE_SPEED, PLAYER_BASE_HEALTH,
   PLAYER_BASE_ENERGY, PLAYER_BASE_DAMAGE, XP_PER_LEVEL_BASE, XP_PER_LEVEL_GROWTH,
-  MAX_LEVEL, EVOLUTIONS, WORLD_SIZE } = require('./constants');
+  MAX_LEVEL, BOT_MAX_LEVEL, EVOLUTIONS, WORLD_SIZE } = require('./constants');
 
 let nextEntityId = 1;
 function allocId() { return nextEntityId++; }
@@ -74,14 +74,15 @@ function createPlayer({ socketId, name, isBot, color, bodyShape, personality }) 
 function xpToNextFor(level) { return xpForLevel(level); }
 
 function grantXP(player, amount, io) {
-  if (!player.alive || player.level >= MAX_LEVEL) { player.score += Math.round(amount * 0.5); return; }
+  const cap = player.isBot ? BOT_MAX_LEVEL : MAX_LEVEL;
+  if (!player.alive || player.level >= cap) { player.score += Math.round(amount * 0.5); return; }
   player.xp += amount;
   player.score += Math.round(amount);
   let leveled = false;
-  while (player.xp >= player.xpToNext && player.level < MAX_LEVEL) {
+  while (player.xp >= player.xpToNext && player.level < cap) {
     player.xp -= player.xpToNext;
     player.level += 1;
-    player.upgradePoints += 1;
+    player.upgradePoints += 10; // upgrade tokens - spend anytime in the skill tree, no forced popup
     player.xpToNext = xpToNextFor(player.level);
     leveled = true;
     if (player.level === 4 && !player.unlockedWeapons.includes('rail')) player.unlockedWeapons.push('rail');

@@ -12,6 +12,7 @@
   let joinInfo = null;   // { worldSize, zones, weapons, abilities, evolutions, playerId }
   let prevSnap = null, curSnap = null, prevRecvAt = 0, curRecvAt = 0;
   let predicted = { x: 0, y: 0, inited: false };
+  let serverSelfTarget = null;
   let camera = { x: 0, y: 0, zoom: 1 };
   let shake = { t: 0, mag: 0 };
   let running = false;
@@ -55,9 +56,19 @@
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
   window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
+  const DASH_DISTANCE = 180;
   function useAbility() {
     const self = curSnap && curSnap.self;
     if (!self) return;
+    if (self.abilityKey === 'dash' && predicted.inited) {
+      // predict the server's instant-dash displacement locally so there's
+      // nothing to "catch up" to on the next snapshot (removes a rubberband spike)
+      const ang = input.moving ? Math.atan2(input.dy, input.dx) : input.aimAngle;
+      const ws = joinInfo ? joinInfo.worldSize : 6000;
+      const r = self.radius || 18;
+      predicted.x = Math.max(r, Math.min(ws - r, predicted.x + Math.cos(ang) * DASH_DISTANCE));
+      predicted.y = Math.max(r, Math.min(ws - r, predicted.y + Math.sin(ang) * DASH_DISTANCE));
+    }
     Net.ability(self.abilityKey);
     SFX.ability();
   }
@@ -140,6 +151,16 @@
       const r = self ? self.radius : 18;
       predicted.x = Math.max(r, Math.min(ws - r, predicted.x));
       predicted.y = Math.max(r, Math.min(ws - r, predicted.y));
+
+      // continuously (every rendered frame, not once per ~66ms network packet)
+      // nudge the prediction toward the last known authoritative position.
+      // Spreading the correction over many small frame-rate-independent steps
+      // instead of one lump pull per snapshot is what removes the rubberbanding.
+      if (serverSelfTarget) {
+        const pull = 1 - Math.pow(0.0006, dt);
+        predicted.x += (serverSelfTarget.x - predicted.x) * pull;
+        predicted.y += (serverSelfTarget.y - predicted.y) * pull;
+      }
     }
 
     // local optimistic fire sfx/vfx (server is still authoritative for damage)
@@ -168,6 +189,7 @@
   Net.on('joined', (data) => {
     joinInfo = data;
     predicted.inited = false;
+    serverSelfTarget = null;
     detectMobile();
     document.getElementById('ability-label').textContent = 'DASH';
   });
@@ -178,11 +200,17 @@
     if (!prevSnap) prevSnap = curSnap;
 
     const self = data.self;
-    if (!predicted.inited) { predicted.x = self.x; predicted.y = self.y; predicted.inited = true; }
-    else {
+    if (!predicted.inited) {
+      predicted.x = self.x; predicted.y = self.y; predicted.inited = true;
+      serverSelfTarget = { x: self.x, y: self.y };
+    } else {
       const diff = Math.hypot(self.x - predicted.x, self.y - predicted.y);
-      if (diff > 140) { predicted.x = self.x; predicted.y = self.y; }
-      else { predicted.x += (self.x - predicted.x) * 0.25; predicted.y += (self.y - predicted.y) * 0.25; }
+      // only a genuine desync (respawn, big knockback) snaps instantly; everyday
+      // drift (e.g. server-side collision separation the client doesn't simulate)
+      // is bled off gradually every frame instead, which is what actually kills
+      // the rubberbanding rather than one lump correction per network packet.
+      if (diff > 320) { predicted.x = self.x; predicted.y = self.y; }
+      serverSelfTarget = { x: self.x, y: self.y };
     }
 
     if (lastHealth !== null && self.health < lastHealth - 0.5) {
@@ -231,7 +259,7 @@
   Net.on('levelup', (data) => {
     SFX.levelup();
     worldParticles.burst(predicted.x, predicted.y, 40, { color: ['#5ad1ff', '#ffd75a', '#ffffff'], minSpeed: 80, maxSpeed: 320, minLife: 0.4, maxLife: 0.9, glow: true, maxSize: 6 });
-    if (window.UI) window.UI.showLevelUp(data);
+    if (window.UI) window.UI.onLevelUp(data);
   });
 
   Net.on('evolutionAvailable', (data) => { if (window.UI) window.UI.showEvolution(data); });
@@ -519,6 +547,7 @@
     start() {
       running = true; lastFrameT = 0;
       predicted.inited = false;
+      serverSelfTarget = null;
       dmgNumbers = [];
       lastHealth = null; lastKillCount = 0; lastResourceCount = 0;
       detectMobile();

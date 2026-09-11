@@ -6,6 +6,7 @@ const { Server } = require('socket.io');
 const GameRoom = require('./game/GameRoom');
 const C = require('./game/constants');
 const { resolvedZones } = require('./game/zones');
+const { sanitizeDisplayName } = require('./game/moderation');
 
 const PORT = process.env.PORT || 3000;
 
@@ -57,6 +58,15 @@ function pickRoomForJoin(partyCode) {
 
 if (rooms.length === 0) createRoom();
 
+function isNameTaken(lowerName) {
+  for (const r of rooms) {
+    for (const p of r.players.values()) {
+      if (!p.isBot && p.name.toLowerCase() === lowerName) return true;
+    }
+  }
+  return false;
+}
+
 // ---------- sockets ----------
 
 io.on('connection', (socket) => {
@@ -67,9 +77,10 @@ io.on('connection', (socket) => {
   }
 
   function doJoin(data) {
+    const resolved = sanitizeDisplayName(data && data.name, isNameTaken);
     const room = pickRoomForJoin(data && data.partyCode);
     socket.data.roomName = room.name;
-    const player = room.addRealPlayer(socket, data || {});
+    const player = room.addRealPlayer(socket, { ...(data || {}), name: resolved.name });
     socket.emit('joined', {
       playerId: player.id,
       roomName: room.displayName,
@@ -80,6 +91,9 @@ io.on('connection', (socket) => {
       evolutions: C.EVOLUTIONS,
       realCount: room.realCount,
       botCount: room.botCount,
+      name: resolved.name,
+      nameChanged: resolved.changed,
+      nameChangeReason: resolved.reason,
     });
   }
 

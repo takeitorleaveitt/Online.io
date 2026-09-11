@@ -25,22 +25,23 @@
 
   <div class="menu-main">
     <div class="name-row">
-      <input id="name-input" maxlength="16" placeholder="Enter name" autocomplete="off" />
+      <input id="name-input" maxlength="18" placeholder="Enter name (3-18 chars)" autocomplete="off" />
+      <div id="name-hint" class="name-hint hidden"></div>
     </div>
-    <button id="btn-play" class="btn-play">PLAY</button>
+    <button id="btn-play" class="gbtn gbtn-yellow gbtn-lg">PLAY</button>
     <div class="menu-grid">
-      <button class="menu-btn" data-panel="customize">CUSTOMIZE</button>
-      <button class="menu-btn" data-panel="upgrades">UPGRADES</button>
-      <button class="menu-btn" data-panel="missions">MISSIONS</button>
-      <button class="menu-btn" data-panel="leaderboards">LEADERBOARDS</button>
-      <button class="menu-btn" data-panel="shop">SHOP</button>
-      <button class="menu-btn" data-panel="settings">SETTINGS</button>
+      <button class="gbtn gbtn-blue" data-panel="customize">CUSTOMIZE</button>
+      <button class="gbtn gbtn-purple" data-panel="upgrades">UPGRADES</button>
+      <button class="gbtn gbtn-green" data-panel="missions">MISSIONS</button>
+      <button class="gbtn gbtn-orange" data-panel="leaderboards">LEADERBOARDS</button>
+      <button class="gbtn gbtn-teal" data-panel="shop">SHOP</button>
+      <button class="gbtn gbtn-gray" data-panel="settings">SETTINGS</button>
     </div>
   </div>
 
   <div class="menu-footer">
-    <div class="currency-pill">⬡ <span id="currency-amount">0</span></div>
-    <div class="daily-pill" id="daily-pill">🎁 Daily Reward</div>
+    <div class="gbadge gbadge-yellow">⬡ <span id="currency-amount">0</span></div>
+    <button class="gbtn gbtn-green gbtn-sm" id="daily-pill">🎁 Daily Reward</button>
   </div>
 </div>
 
@@ -49,7 +50,7 @@
   <div class="panel">
     <div class="panel-header">
       <div class="panel-title" id="panel-title">PANEL</div>
-      <button class="panel-close" id="panel-close">✕</button>
+      <button class="gbtn gbtn-red gbtn-round gbtn-sm" id="panel-close">✕</button>
     </div>
     <div class="panel-body" id="panel-body"></div>
   </div>
@@ -58,9 +59,10 @@
 <!-- ============ HUD (in game) ============ -->
 <div id="hud" class="hud hidden">
   <div class="hud-top-left">
-    <div class="level-badge">LV <span id="hud-level">1</span></div>
+    <div class="gbadge gbadge-yellow level-badge">LV <span id="hud-level">1</span></div>
     <div class="xp-bar-wrap"><div class="xp-bar" id="hud-xp-bar"></div></div>
     <div class="score-line">SCORE <span id="hud-score">0</span></div>
+    <button class="gbtn gbtn-purple gbtn-sm token-badge" id="token-badge">🌟 <span id="hud-tokens">0</span> TOKENS</button>
   </div>
 
   <div class="hud-top-right" id="hud-leaderboard">
@@ -82,7 +84,7 @@
   </div>
 
   <div class="hud-bottom-center">
-    <button id="ability-btn" class="ability-btn">
+    <button id="ability-btn" class="gbtn gbtn-orange gbtn-round gbtn-lg ability-btn">
       <div class="ability-cd" id="ability-cd"></div>
       <span id="ability-label">DASH</span>
     </button>
@@ -106,11 +108,11 @@
   </div>
 </div>
 
-<!-- ============ LEVEL UP / EVOLUTION picker ============ -->
+<!-- ============ SKILL TREE (opened on demand via token badge / U key) ============ -->
 <div id="levelup-overlay" class="levelup-overlay hidden">
-  <div class="levelup-title">LEVEL <span id="levelup-num">2</span> — CHOOSE AN UPGRADE</div>
+  <button class="gbtn gbtn-red gbtn-round gbtn-sm tree-close" id="upgrade-skip">✕</button>
+  <div class="levelup-title">SKILL TREE — <span id="levelup-num">0</span> TOKENS AVAILABLE</div>
   <div class="upgrade-grid" id="upgrade-grid"></div>
-  <button class="skip-btn" id="upgrade-skip">skip</button>
 </div>
 
 <div id="evolution-overlay" class="levelup-overlay hidden">
@@ -136,11 +138,14 @@
     <div>BEST SCORE: <span id="death-best">0</span></div>
   </div>
   <div class="death-buttons">
-    <button id="death-play-again" class="btn-play small">PLAY AGAIN</button>
-    <button id="death-customize" class="menu-btn">CUSTOMIZE</button>
-    <button id="death-menu" class="menu-btn">MAIN MENU</button>
+    <button id="death-play-again" class="gbtn gbtn-yellow gbtn-lg">PLAY AGAIN</button>
+    <button id="death-customize" class="gbtn gbtn-blue">CUSTOMIZE</button>
+    <button id="death-menu" class="gbtn gbtn-gray">MAIN MENU</button>
   </div>
 </div>
+
+<!-- ============ CONTROLS HINT (brief, fades out) ============ -->
+<div id="controls-hint" class="controls-hint hidden">MOVE: mouse or WASD &nbsp;·&nbsp; FIRE: hold click &nbsp;·&nbsp; ABILITY: space</div>
 
 <!-- ============ CONNECTING OVERLAY ============ -->
 <div id="screen-connecting" class="screen connecting-screen hidden">
